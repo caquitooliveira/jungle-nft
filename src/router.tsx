@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-router'
 import { HomePage } from '@/pages/home-page'
 import { NotFoundPage } from '@/pages/not-found-page'
+import { validateCatalogSearch } from '@/lib/catalog-search'
 
 const rootRoute = createRootRoute({
   component: Outlet,
@@ -15,6 +16,7 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
+  validateSearch: validateCatalogSearch,
   component: HomePage,
 })
 
