@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate, useSearch } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -317,7 +317,15 @@ export function HomePage() {
                             className="aspect-square w-full rounded-lg object-cover"
                           />
 
-                          <h2 className="mt-3 font-bold">{nft.name}</h2>
+                          <h2 className="mt-3 font-bold">
+  <Link
+    to="/nfts/$nftId"
+    params={{ nftId: nft.id }}
+    className="rounded-sm hover:text-[#e6a15a] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#e6a15a]"
+  >
+    {nft.name}
+  </Link>
+</h2>
 
                           <p className="mt-2 text-[#e6a15a]">
                             {nft.editions[0]?.priceEth} ETH
