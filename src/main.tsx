@@ -5,10 +5,22 @@ import { queryClient } from '@/lib/query-client'
 import App from './App'
 import './index.css'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </StrictMode>,
-)
+async function bootstrap() {
+  if (import.meta.env.VITE_ENABLE_MOCKS === 'true') {
+    const { worker } = await import('./mocks/browser')
+
+    await worker.start()
+  }
+
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </StrictMode>,
+  )
+}
+
+bootstrap().catch((error: unknown) => {
+  console.error('Falha ao iniciar o aplicativo:', error)
+})
