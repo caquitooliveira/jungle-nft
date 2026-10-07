@@ -8,6 +8,8 @@ export interface NftListParams {
   sort?: 'newest' | 'name'
   page?: number
   pageSize?: number
+  minPrice?: string
+  maxPrice?: string 
 }
 
 export async function getNfts(

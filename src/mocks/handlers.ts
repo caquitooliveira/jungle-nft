@@ -1,6 +1,7 @@
 import { delay, http, HttpResponse } from 'msw'
 import { createNftFixtures } from './nft-fixtures'
 import type { NftListResponse } from '@/types/nft'
+import { ethToWei } from '@/lib/eth'
 
 const nfts = createNftFixtures()
 
@@ -28,6 +29,39 @@ export const handlers = [
     const page = positiveInteger(url.searchParams.get('page'), 1, 10_000)
     const pageSize = positiveInteger(url.searchParams.get('pageSize'), 9, 50)
 
+    const minPrice = url.searchParams.get('minPrice')
+    const maxPrice = url.searchParams.get('maxPrice')
+
+    const isValidPrice = (value: string | null) =>
+      value === null || /^\d+(\.\d{1,18})?$/.test(value)
+
+    if (!isValidPrice(minPrice) || !isValidPrice(maxPrice)) {
+      return HttpResponse.json(
+        {
+          code: 'INVALID_PRICE',
+          message: 'Informe preços válidos em ETH.',
+        },
+        { status: 400 },
+      )
+    }
+
+    const minimum = minPrice === null ? undefined : ethToWei(minPrice)
+    const maximum = maxPrice === null ? undefined : ethToWei(maxPrice)
+
+    if (
+      minimum !== undefined &&
+      maximum !== undefined &&
+      minimum > maximum
+    ) {
+      return HttpResponse.json(
+        {
+          code: 'INVALID_PRICE_RANGE',
+          message: 'O preço mínimo não pode superar o máximo.',
+        },
+        { status: 400 },
+      )
+    }
+
     const filtered = nfts.filter((nft) => {
       const matchesSearch =
         `${nft.name} ${nft.creator}`.toLowerCase().includes(search)
@@ -38,7 +72,21 @@ export const handlers = [
       const matchesNetwork =
         networks.length === 0 || networks.includes(nft.network)
 
-      return matchesSearch && matchesCategory && matchesNetwork
+      const matchesPrice = nft.editions.some((edition) => {
+        const price = ethToWei(edition.priceEth)
+
+        return (
+          (minimum === undefined || price >= minimum) &&
+          (maximum === undefined || price <= maximum)
+        )
+      })
+
+      return (
+        matchesSearch &&
+        matchesCategory &&
+        matchesNetwork &&
+        matchesPrice
+      )
     })
 
     filtered.sort((first, second) => {

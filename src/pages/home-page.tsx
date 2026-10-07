@@ -5,6 +5,8 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { CatalogSearch } from '@/lib/catalog-search'
 import { getNfts } from '@/services/nft-service'
+import { useState } from 'react'
+import { ethToWei } from '@/lib/eth'
 
 const categories = ['Arte digital', 'Fotografia', 'Música', 'Arte 3D']
 const networks = ['ethereum', 'polygon', 'solana']
@@ -13,6 +15,7 @@ const pageSize = 9
 export function HomePage() {
   const filters = useSearch({ from: '/' })
   const navigate = useNavigate({ from: '/' })
+  const [priceError, setPriceError] = useState('')
 
   const { data, isPending, isError, refetch, isFetching } = useQuery({
     queryKey: ['nfts', { ...filters, pageSize }],
@@ -98,18 +101,96 @@ export function HomePage() {
               ))}
             </fieldset>
 
-            <Button
-              onClick={() =>
-                updateFilters({
-                  search: '',
-                  category: [],
-                  network: [],
-                  sort: 'newest',
-                })
-              }
-            >
-              Limpar filtros
-            </Button>
+            <form
+  key={`${filters.minPrice ?? ''}:${filters.maxPrice ?? ''}`}
+  className="space-y-3"
+  onSubmit={(event) => {
+    event.preventDefault()
+
+    const form = new FormData(event.currentTarget)
+    const minimum = String(form.get('minPrice') ?? '')
+      .trim()
+      .replace(',', '.')
+    const maximum = String(form.get('maxPrice') ?? '')
+      .trim()
+      .replace(',', '.')
+
+    try {
+      const minWei = minimum ? ethToWei(minimum) : undefined
+      const maxWei = maximum ? ethToWei(maximum) : undefined
+
+      if (
+        minWei !== undefined &&
+        maxWei !== undefined &&
+        minWei > maxWei
+      ) {
+        setPriceError('O preço mínimo não pode superar o máximo.')
+        return
+      }
+
+      setPriceError('')
+      updateFilters({
+        minPrice: minimum || undefined,
+        maxPrice: maximum || undefined,
+      })
+    } catch {
+      setPriceError('Informe preços válidos, com até 18 casas decimais.')
+    }
+  }}
+>
+  <h2 className="font-bold">Faixa de preço em ETH</h2>
+
+  <label htmlFor="min-price" className="block">
+    Preço mínimo
+  </label>
+  <Input
+    id="min-price"
+    name="minPrice"
+    inputMode="decimal"
+    defaultValue={filters.minPrice ?? ''}
+    placeholder="0,00"
+    aria-invalid={Boolean(priceError)}
+    aria-describedby={priceError ? 'price-error' : undefined}
+  />
+
+  <label htmlFor="max-price" className="block">
+    Preço máximo
+  </label>
+  <Input
+    id="max-price"
+    name="maxPrice"
+    inputMode="decimal"
+    defaultValue={filters.maxPrice ?? ''}
+    placeholder="3,00"
+    aria-invalid={Boolean(priceError)}
+    aria-describedby={priceError ? 'price-error' : undefined}
+  />
+
+  {priceError && (
+    <p id="price-error" role="alert" className="text-sm text-red-300">
+      {priceError}
+    </p>
+  )}
+
+  <Button type="submit">Aplicar preço</Button>
+</form>
+
+<Button
+  onClick={() => {
+    setPriceError('')
+    updateFilters({
+      search: '',
+      category: [],
+      network: [],
+      sort: 'newest',
+      minPrice: undefined,
+      maxPrice: undefined,
+    })
+  }}
+>
+  Limpar filtros
+</Button>
+
           </aside>
 
           <section aria-label="Catálogo de NFTs">
