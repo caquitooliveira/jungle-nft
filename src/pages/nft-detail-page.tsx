@@ -9,6 +9,8 @@ import { SiteHeader } from '@/components/layout/site-header'
 import { SiteFooter } from '@/components/layout/site-footer'
 import { getNft, getNfts } from '@/services/nft-service'
 import type { Nft } from '@/types/nft'
+import { BuyNftButton } from '@/components/nft/buy-nft-button'
+
 
 const initialSearch = {
   search: '',
@@ -392,13 +394,12 @@ function NftDetails({ nft }: { nft: Nft }) {
             </div>
 
             <div className="flex gap-2">
-              <Button
-                type="button"
-                disabled
-                className={`px-6 text-xs uppercase ${orangeButton}`}
-              >
-                Comprar
-              </Button>
+              <BuyNftButton
+                nftId={nft.id}
+                editionId={edition?.id ?? ''}
+                quantity={effectiveQuantity}
+                availableQuantity={availableQuantity}
+              />
 
               <Button
                 type="button"

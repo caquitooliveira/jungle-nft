@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-router'
 import { HomePage } from '@/pages/home-page'
 import { NftDetailPage } from '@/pages/nft-detail-page'
+import { CartPage } from '@/pages/cart-page'
 import { NotFoundPage } from '@/pages/not-found-page'
 import { validateCatalogSearch } from '@/lib/catalog-search'
 
@@ -27,9 +28,16 @@ const nftDetailRoute = createRoute({
   component: NftDetailPage,
 })
 
+const cartRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/carrinho',
+  component: CartPage,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   nftDetailRoute,
+  cartRoute,
 ])
 
 export const router = createRouter({

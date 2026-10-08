@@ -1,9 +1,8 @@
 import { delay, http, HttpResponse } from 'msw'
-import { createNftFixtures } from './nft-fixtures'
+import { nfts } from './nft-db'
+import { cartHandlers } from './cart-handlers'
 import type { NftListResponse } from '@/types/nft'
 import { ethToWei } from '@/lib/eth'
-
-const nfts = createNftFixtures()
 
 function positiveInteger(
   value: string | null,
@@ -18,16 +17,27 @@ function positiveInteger(
 }
 
 export const handlers = [
+  ...cartHandlers,
+
   http.get('/api/nfts', async ({ request }) => {
     await delay(400)
 
     const url = new URL(request.url)
-    const search = url.searchParams.get('search')?.trim().toLowerCase() ?? ''
+    const search =
+      url.searchParams.get('search')?.trim().toLowerCase() ?? ''
     const categories = url.searchParams.getAll('category')
     const networks = url.searchParams.getAll('network')
     const sort = url.searchParams.get('sort') ?? 'newest'
-    const page = positiveInteger(url.searchParams.get('page'), 1, 10_000)
-    const pageSize = positiveInteger(url.searchParams.get('pageSize'), 9, 50)
+    const page = positiveInteger(
+      url.searchParams.get('page'),
+      1,
+      10_000,
+    )
+    const pageSize = positiveInteger(
+      url.searchParams.get('pageSize'),
+      9,
+      50,
+    )
 
     const minPrice = url.searchParams.get('minPrice')
     const maxPrice = url.searchParams.get('maxPrice')
@@ -45,8 +55,10 @@ export const handlers = [
       )
     }
 
-    const minimum = minPrice === null ? undefined : ethToWei(minPrice)
-    const maximum = maxPrice === null ? undefined : ethToWei(maxPrice)
+    const minimum =
+      minPrice === null ? undefined : ethToWei(minPrice)
+    const maximum =
+      maxPrice === null ? undefined : ethToWei(maxPrice)
 
     if (
       minimum !== undefined &&
@@ -67,10 +79,12 @@ export const handlers = [
         `${nft.name} ${nft.creator}`.toLowerCase().includes(search)
 
       const matchesCategory =
-        categories.length === 0 || categories.includes(nft.category)
+        categories.length === 0 ||
+        categories.includes(nft.category)
 
       const matchesNetwork =
-        networks.length === 0 || networks.includes(nft.network)
+        networks.length === 0 ||
+        networks.includes(nft.network)
 
       const matchesPrice = nft.editions.some((edition) => {
         const price = ethToWei(edition.priceEth)
