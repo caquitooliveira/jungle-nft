@@ -3,6 +3,7 @@ import { nfts } from './nft-db'
 import { cartHandlers } from './cart-handlers'
 import type { NftListResponse } from '@/types/nft'
 import { ethToWei } from '@/lib/eth'
+import { authHandlers } from './auth-handlers'
 
 function positiveInteger(
   value: string | null,
@@ -17,6 +18,7 @@ function positiveInteger(
 }
 
 export const handlers = [
+  ...authHandlers,
   ...cartHandlers,
 
   http.get('/api/nfts', async ({ request }) => {
