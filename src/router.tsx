@@ -7,6 +7,8 @@ import {
 import { HomePage } from '@/pages/home-page'
 import { NftDetailPage } from '@/pages/nft-detail-page'
 import { CartPage } from '@/pages/cart-page'
+import { CheckoutPage } from '@/pages/checkout-page'
+import { OrderConfirmationPage } from '@/pages/order-confirmation-page'
 import { NotFoundPage } from '@/pages/not-found-page'
 import { validateCatalogSearch } from '@/lib/catalog-search'
 
@@ -34,10 +36,24 @@ const cartRoute = createRoute({
   component: CartPage,
 })
 
+const checkoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/pagamento',
+  component: CheckoutPage,
+})
+
+const orderRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/pedidos/$orderId',
+  component: OrderConfirmationPage,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   nftDetailRoute,
   cartRoute,
+  checkoutRoute,
+  orderRoute,
 ])
 
 export const router = createRouter({

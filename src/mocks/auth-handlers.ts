@@ -6,6 +6,7 @@ import {
   revokeSession,
 } from './auth-db'
 
+
 function getToken(request: Request) {
   const authorization = request.headers.get('Authorization')
 

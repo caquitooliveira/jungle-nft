@@ -440,7 +440,8 @@ export function CartPage() {
 
               <Button
                 type="button"
-                disabled
+                disabled={!quote.isSuccess || quote.isFetching}
+                onClick={() => void navigate({ to: '/pagamento' })}
                 className={`mt-6 w-full text-xs ${orangeButton}`}
               >
                 Conectar e finalizar

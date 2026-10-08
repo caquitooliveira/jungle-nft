@@ -220,7 +220,7 @@ function AuthForm() {
               onClick={() => setShowPassword((previous) => !previous)}
               className="absolute inset-y-0 right-2 text-[10px] text-[#e6a15a]"
             >
-              {showPassword ? 'Ocultar' : 'Mostrar'}
+              
             </button>
           </div>
 

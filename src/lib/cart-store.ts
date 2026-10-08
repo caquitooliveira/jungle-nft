@@ -4,6 +4,7 @@ import type { CartItem } from '@/types/cart'
 interface CartDatabase {
   guest: CartItem[]
   users: Record<string, CartItem[]>
+  completedOrders: Record<string, string[]>
 }
 
 const storageKey = 'kurio:carts:v2'
@@ -36,7 +37,7 @@ function parseItems(value: unknown): CartItem[] {
   const merged = new Map<string, CartItem>()
 
   for (const item of value.filter(isCartItem)) {
-    const key = `${item.nftId}:${item.editionId}`
+    const key = JSON.stringify([item.nftId, item.editionId])
     const previous = merged.get(key)
     const quantity = item.quantity + (previous?.quantity ?? 0)
 
@@ -65,17 +66,19 @@ function readDatabase(): CartDatabase {
     return {
       guest: legacy ? parseItems(JSON.parse(legacy)) : [],
       users: {},
+      completedOrders: {},
     }
   }
 
   const value: unknown = JSON.parse(stored)
 
-  if (!value || typeof value !== 'object') {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Os dados salvos do carrinho são inválidos.')
   }
 
   const database = value as Record<string, unknown>
   const users: Record<string, CartItem[]> = {}
+  const completedOrders: Record<string, string[]> = {}
 
   if (
     database.users &&
@@ -87,9 +90,34 @@ function readDatabase(): CartDatabase {
     }
   }
 
+  if (
+    database.completedOrders &&
+    typeof database.completedOrders === 'object' &&
+    !Array.isArray(database.completedOrders)
+  ) {
+    for (const [userId, orderIds] of Object.entries(
+      database.completedOrders,
+    )) {
+      if (
+        !Array.isArray(orderIds) ||
+        !orderIds.every(
+          (orderId) =>
+            typeof orderId === 'string' && orderId.length > 0,
+        )
+      ) {
+        throw new Error(
+          'O registro de compras do carrinho é inválido.',
+        )
+      }
+
+      completedOrders[userId] = [...new Set<string>(orderIds)]
+    }
+  }
+
   return {
     guest: parseItems(database.guest),
     users,
+    completedOrders,
   }
 }
 
@@ -100,8 +128,7 @@ let items: CartItem[] = []
 try {
   items = isLocked ? [] : readDatabase().guest
 } catch {
-  // Mantém os dados originais salvos. Uma operação posterior
-  // informa o erro em vez de sobrescrever um carrinho corrompido.
+  // Preserva os dados salvos para não sobrescrever um carrinho inválido.
 }
 
 function notify() {
@@ -109,8 +136,6 @@ function notify() {
 }
 
 function persist(database: CartDatabase) {
-  // Visitante e contas são gravados juntos para que a mesclagem
-  // não seja repetida após recarregar.
   localStorage.setItem(storageKey, JSON.stringify(database))
 }
 
@@ -153,14 +178,12 @@ export function useCartItems() {
 }
 
 export function activateUserCart(userId: string) {
-  const database = readDatabase()
-
   if (!userId) {
     throw new Error('Não foi possível identificar a conta.')
   }
 
-  // Só o carrinho do visitante entra na mesclagem.
-  // O carrinho de outra conta permanece separado.
+  const database = readDatabase()
+
   const nextItems = parseItems([
     ...(database.users[userId] ?? []),
     ...database.guest,
@@ -192,8 +215,6 @@ export function activateGuestCart() {
 
 window.addEventListener('storage', (event) => {
   if (event.key === tokenStorageKey || event.key === null) {
-    // A sessão pode ter mudado em outra aba.
-    // Recarrega para validar a identidade antes de mostrar itens.
     window.location.reload()
     return
   }
@@ -201,12 +222,14 @@ window.addEventListener('storage', (event) => {
   if (event.key === storageKey && !isLocked) {
     try {
       const database = readDatabase()
+
       items = activeUserId
         ? database.users[activeUserId] ?? []
         : database.guest
+
       notify()
     } catch {
-      // Não substitui o estado atual por dados inválidos.
+      // Mantém o estado atual quando os dados recebidos são inválidos.
     }
   }
 })
@@ -282,4 +305,81 @@ export function removeCartItem(nftId: string, editionId: string) {
         item.nftId !== nftId || item.editionId !== editionId,
     ),
   )
+}
+
+function applyConfirmedOrder(
+  userId: string,
+  orderId: string,
+  purchasedItems: CartItem[],
+) {
+  ensureReady()
+
+  if (!userId || activeUserId !== userId) {
+    throw new Error(
+      'Entre na conta do pedido para atualizar o carrinho.',
+    )
+  }
+
+  if (
+    !orderId ||
+    !purchasedItems.length ||
+    !purchasedItems.every(isCartItem)
+  ) {
+    throw new Error('Os itens do pedido são inválidos.')
+  }
+
+  const database = readDatabase()
+  const completed = database.completedOrders[userId] ?? []
+
+  if (completed.includes(orderId)) {
+    return
+  }
+
+  const purchased = parseItems(purchasedItems)
+  const quantities = new Map(
+    purchased.map((item) => [
+      JSON.stringify([item.nftId, item.editionId]),
+      item.quantity,
+    ]),
+  )
+
+  const nextItems = (database.users[userId] ?? [])
+    .map((item) => {
+      const purchasedQuantity =
+        quantities.get(
+          JSON.stringify([item.nftId, item.editionId]),
+        ) ?? 0
+
+      return {
+        ...item,
+        quantity: Math.max(0, item.quantity - purchasedQuantity),
+      }
+    })
+    .filter((item) => item.quantity > 0)
+
+  database.users[userId] = nextItems
+  database.completedOrders[userId] = [...completed, orderId]
+
+  // Grava a retirada e seu registro na mesma operação.
+  persist(database)
+
+  items = nextItems
+  notify()
+}
+
+export async function completeCartOrder(
+  userId: string,
+  orderId: string,
+  purchasedItems: CartItem[],
+) {
+  // Serializa a confirmação entre abas quando o navegador oferece
+  // Web Locks. A marcação persistida também protege atualizações.
+  if (navigator.locks) {
+    await navigator.locks.request(storageKey, () => {
+      applyConfirmedOrder(userId, orderId, purchasedItems)
+    })
+    return
+  }
+
+  applyConfirmedOrder(userId, orderId, purchasedItems)
 }
