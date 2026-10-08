@@ -1,7 +1,14 @@
 import { useSyncExternalStore } from 'react'
 import type { CartItem } from '@/types/cart'
 
-const storageKey = 'kurio:guest-cart:v1'
+interface CartDatabase {
+  guest: CartItem[]
+  users: Record<string, CartItem[]>
+}
+
+const storageKey = 'kurio:carts:v2'
+const legacyStorageKey = 'kurio:guest-cart:v1'
+const tokenStorageKey = 'kurio:session-token:v1'
 const listeners = new Set<() => void>()
 
 function isCartItem(value: unknown): value is CartItem {
@@ -21,47 +28,110 @@ function isCartItem(value: unknown): value is CartItem {
   )
 }
 
-function readCart(): CartItem[] {
-  try {
-    const stored: unknown = JSON.parse(
-      localStorage.getItem(storageKey) ?? '[]',
-    )
-
-    if (!Array.isArray(stored)) {
-      return []
-    }
-
-    const merged = new Map<string, CartItem>()
-
-    for (const item of stored.filter(isCartItem)) {
-      const key = `${item.nftId}:${item.editionId}`
-      const previous = merged.get(key)
-
-      merged.set(key, {
-        ...item,
-        quantity: Math.min(
-          100,
-          item.quantity + (previous?.quantity ?? 0),
-        ),
-      })
-    }
-
-    return [...merged.values()]
-  } catch {
+function parseItems(value: unknown): CartItem[] {
+  if (!Array.isArray(value)) {
     return []
+  }
+
+  const merged = new Map<string, CartItem>()
+
+  for (const item of value.filter(isCartItem)) {
+    const key = `${item.nftId}:${item.editionId}`
+    const previous = merged.get(key)
+    const quantity = item.quantity + (previous?.quantity ?? 0)
+
+    if (quantity > 100) {
+      throw new Error(
+        'Uma edição supera o limite de 100 unidades no carrinho.',
+      )
+    }
+
+    merged.set(key, {
+      nftId: item.nftId,
+      editionId: item.editionId,
+      quantity,
+    })
+  }
+
+  return [...merged.values()]
+}
+
+function readDatabase(): CartDatabase {
+  const stored = localStorage.getItem(storageKey)
+
+  if (!stored) {
+    const legacy = localStorage.getItem(legacyStorageKey)
+
+    return {
+      guest: legacy ? parseItems(JSON.parse(legacy)) : [],
+      users: {},
+    }
+  }
+
+  const value: unknown = JSON.parse(stored)
+
+  if (!value || typeof value !== 'object') {
+    throw new Error('Os dados salvos do carrinho são inválidos.')
+  }
+
+  const database = value as Record<string, unknown>
+  const users: Record<string, CartItem[]> = {}
+
+  if (
+    database.users &&
+    typeof database.users === 'object' &&
+    !Array.isArray(database.users)
+  ) {
+    for (const [userId, userItems] of Object.entries(database.users)) {
+      users[userId] = parseItems(userItems)
+    }
+  }
+
+  return {
+    guest: parseItems(database.guest),
+    users,
   }
 }
 
-let items = readCart()
+let activeUserId: string | null = null
+let isLocked = Boolean(localStorage.getItem(tokenStorageKey))
+let items: CartItem[] = []
+
+try {
+  items = isLocked ? [] : readDatabase().guest
+} catch {
+  // Mantém os dados originais salvos. Uma operação posterior
+  // informa o erro em vez de sobrescrever um carrinho corrompido.
+}
 
 function notify() {
   listeners.forEach((listener) => listener())
 }
 
+function persist(database: CartDatabase) {
+  // Visitante e contas são gravados juntos para que a mesclagem
+  // não seja repetida após recarregar.
+  localStorage.setItem(storageKey, JSON.stringify(database))
+}
+
+function ensureReady() {
+  if (isLocked) {
+    throw new Error('Aguarde a recuperação da sua sessão.')
+  }
+}
+
 function saveCart(nextItems: CartItem[]) {
-  // Salva primeiro: se o navegador bloquear o armazenamento,
-  // a interface poderá mostrar o erro sem afirmar que salvou.
-  localStorage.setItem(storageKey, JSON.stringify(nextItems))
+  ensureReady()
+
+  const database = readDatabase()
+
+  if (activeUserId) {
+    database.users[activeUserId] = nextItems
+  } else {
+    database.guest = nextItems
+  }
+
+  persist(database)
   items = nextItems
   notify()
 }
@@ -78,21 +148,75 @@ function getSnapshot() {
   return items
 }
 
-window.addEventListener('storage', (event) => {
-  if (event.key === storageKey || event.key === null) {
-    items = readCart()
-    notify()
-  }
-})
-
 export function useCartItems() {
   return useSyncExternalStore(subscribe, getSnapshot)
 }
+
+export function activateUserCart(userId: string) {
+  const database = readDatabase()
+
+  if (!userId) {
+    throw new Error('Não foi possível identificar a conta.')
+  }
+
+  // Só o carrinho do visitante entra na mesclagem.
+  // O carrinho de outra conta permanece separado.
+  const nextItems = parseItems([
+    ...(database.users[userId] ?? []),
+    ...database.guest,
+  ])
+
+  database.users[userId] = nextItems
+  database.guest = []
+
+  persist(database)
+
+  activeUserId = userId
+  isLocked = false
+  items = nextItems
+  notify()
+}
+
+export function activateGuestCart() {
+  activeUserId = null
+  isLocked = false
+
+  try {
+    items = readDatabase().guest
+  } catch {
+    items = []
+  }
+
+  notify()
+}
+
+window.addEventListener('storage', (event) => {
+  if (event.key === tokenStorageKey || event.key === null) {
+    // A sessão pode ter mudado em outra aba.
+    // Recarrega para validar a identidade antes de mostrar itens.
+    window.location.reload()
+    return
+  }
+
+  if (event.key === storageKey && !isLocked) {
+    try {
+      const database = readDatabase()
+      items = activeUserId
+        ? database.users[activeUserId] ?? []
+        : database.guest
+      notify()
+    } catch {
+      // Não substitui o estado atual por dados inválidos.
+    }
+  }
+})
 
 export function addCartItem(
   item: CartItem,
   availableQuantity: number,
 ) {
+  ensureReady()
+
   if (
     !isCartItem(item) ||
     !Number.isSafeInteger(availableQuantity) ||
@@ -130,6 +254,8 @@ export function setCartQuantity(
   editionId: string,
   quantity: number,
 ) {
+  ensureReady()
+
   if (
     !Number.isSafeInteger(quantity) ||
     quantity < 1 ||
@@ -148,6 +274,8 @@ export function setCartQuantity(
 }
 
 export function removeCartItem(nftId: string, editionId: string) {
+  ensureReady()
+
   saveCart(
     items.filter(
       (item) =>
