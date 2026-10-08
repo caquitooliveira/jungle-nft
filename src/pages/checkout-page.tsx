@@ -327,7 +327,7 @@ function CheckoutForm({ session }: { session: AuthSession }) {
     }
   }
 
-  function useSavedWallet(wallet: SavedWallet) {
+  function applySavedWallet(wallet: SavedWallet) {
     updateDraft({
       ...draft,
       network: wallet.network,
@@ -518,7 +518,7 @@ function CheckoutForm({ session }: { session: AuthSession }) {
                 )
 
                 if (wallet) {
-                  useSavedWallet(wallet)
+                  applySavedWallet(wallet)
                 } else {
                   updateDraft({ ...draft, address: '' })
                 }

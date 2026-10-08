@@ -10,6 +10,7 @@ import { SiteFooter } from '@/components/layout/site-footer'
 import { getNft, getNfts } from '@/services/nft-service'
 import type { Nft } from '@/types/nft'
 import { BuyNftButton } from '@/components/nft/buy-nft-button'
+import { FavoriteButton } from '@/components/nft/favorite-button'
 
 
 const initialSearch = {
@@ -401,14 +402,7 @@ function NftDetails({ nft }: { nft: Nft }) {
                 availableQuantity={availableQuantity}
               />
 
-              <Button
-                type="button"
-                variant="outline"
-                disabled
-                className="border-[#705039] bg-transparent text-xs text-[#e6a15a]"
-              >
-                ♡ Favoritar
-              </Button>
+              <FavoriteButton nftId={nft.id} />
             </div>
           </div>
 
