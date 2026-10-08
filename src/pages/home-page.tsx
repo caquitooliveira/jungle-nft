@@ -7,33 +7,34 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { HomeHero } from '@/components/home/home-hero'
 import { HomePromotions } from '@/components/home/home-promotions'
 import { HomeJournal } from '@/components/home/home-journal'
+import { CatalogSidebar } from '@/components/home/catalog-sidebar'
+import { FeaturedNft } from '@/components/home/featured-nft'
 import { SiteHeader } from '@/components/layout/site-header'
 import { SiteFooter } from '@/components/layout/site-footer'
 import type { CatalogSearch } from '@/lib/catalog-search'
-import { ethToWei } from '@/lib/eth'
 import { getNfts } from '@/services/nft-service'
-import { FeaturedNft } from '@/components/home/featured-nft'
 
-const categories = [
-  'Arte digital',
-  'Fotografia',
-  'Música',
-  'Arte 3D',
-  'Colecionáveis',
-]
-
-const networks = ['ethereum', 'polygon', 'solana']
 const pageSize = 9
 
 export function HomePage() {
   const filters = useSearch({ from: '/' })
   const navigate = useNavigate({ from: '/' })
-  const [priceError, setPriceError] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
 
   const { data, isPending, isError, refetch, isFetching } = useQuery({
     queryKey: ['nfts', { ...filters, pageSize }],
     queryFn: ({ signal }) => getNfts({ ...filters, pageSize }, signal),
+  })
+
+  // A base atual possui 24 NFTs. Esta consulta traz o catálogo
+  // completo para calcular as contagens, sem usar só a página visível.
+  const countsQuery = useQuery({
+    queryKey: ['nfts', { sort: 'newest', page: 1, pageSize: 50 }],
+    queryFn: ({ signal }) =>
+      getNfts(
+        { sort: 'newest', page: 1, pageSize: 50 },
+        signal,
+      ),
   })
 
   function updateFilters(changes: Partial<CatalogSearch>) {
@@ -43,6 +44,7 @@ export function HomePage() {
         ...changes,
         page: changes.page ?? 1,
       }),
+      hash: 'catalogo',
     })
   }
 
@@ -57,8 +59,6 @@ export function HomePage() {
   }
 
   function clearFilters() {
-    setPriceError('')
-
     updateFilters({
       search: '',
       category: [],
@@ -69,7 +69,10 @@ export function HomePage() {
     })
   }
 
-  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize))
+  const totalPages = Math.max(
+    1,
+    Math.ceil((data?.total ?? 0) / pageSize),
+  )
 
   return (
     <div className="min-h-screen bg-[#160e0a] font-mono text-[#f5eee8]">
@@ -110,161 +113,73 @@ export function HomePage() {
                 className="border-[#705039] bg-[#281a13]"
               />
 
-              <Button type="submit">Buscar</Button>
+              <Button
+                type="submit"
+                className="bg-[#cf8946] text-[#160e0a] hover:bg-[#e6a15a]"
+              >
+                Buscar
+              </Button>
             </form>
           )}
 
           <div
             id="catalogo"
-            className="mt-8 grid gap-8 md:grid-cols-[220px_1fr]"
+            className="mt-8 grid scroll-mt-6 items-start gap-8 md:grid-cols-[260px_minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)]"
           >
-            <aside className="space-y-6">
-              <fieldset>
-                <legend className="mb-3 font-bold">Coleções</legend>
+            <aside className="min-w-0 space-y-6">
+              <CatalogSidebar
+                filters={filters}
+                nfts={countsQuery.data?.items ?? []}
+                countsReady={countsQuery.isSuccess}
+                onToggle={toggleFilter}
+                onUpdate={updateFilters}
+                onClear={clearFilters}
+              />
 
-                {categories.map((category) => (
-                  <label
-                    key={category}
-                    className="mb-3 flex items-center gap-2"
+              {countsQuery.isError && (
+                <div role="alert" className="text-xs text-red-300">
+                  <p>Não foi possível carregar as contagens.</p>
+
+                  <button
+                    type="button"
+                    disabled={countsQuery.isFetching}
+                    onClick={() => void countsQuery.refetch()}
+                    className="mt-2 underline"
                   >
-                    <input
-                      type="checkbox"
-                      checked={filters.category.includes(category)}
-                      onChange={() => toggleFilter('category', category)}
-                    />
+                    Tentar novamente
+                  </button>
+                </div>
+              )}
 
-                    {category}
-                  </label>
-                ))}
-              </fieldset>
-
-              <fieldset>
-                <legend className="mb-3 font-bold">Rede</legend>
-
-                {networks.map((network) => (
-                  <label
-                    key={network}
-                    className="mb-3 flex items-center gap-2"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={filters.network.includes(network)}
-                      onChange={() => toggleFilter('network', network)}
-                    />
-
-                    {network}
-                  </label>
-                ))}
-              </fieldset>
-
-              <form
-                key={`${filters.minPrice ?? ''}:${filters.maxPrice ?? ''}`}
-                className="space-y-3"
-                onSubmit={(event) => {
-                  event.preventDefault()
-
-                  const form = new FormData(event.currentTarget)
-                  const minimum = String(form.get('minPrice') ?? '')
-                    .trim()
-                    .replace(',', '.')
-                  const maximum = String(form.get('maxPrice') ?? '')
-                    .trim()
-                    .replace(',', '.')
-
-                  try {
-                    const minWei = minimum ? ethToWei(minimum) : undefined
-                    const maxWei = maximum ? ethToWei(maximum) : undefined
-
-                    if (
-                      minWei !== undefined &&
-                      maxWei !== undefined &&
-                      minWei > maxWei
-                    ) {
-                      setPriceError(
-                        'O preço mínimo não pode superar o máximo.',
-                      )
-                      return
-                    }
-
-                    setPriceError('')
-
-                    updateFilters({
-                      minPrice: minimum || undefined,
-                      maxPrice: maximum || undefined,
-                    })
-                  } catch {
-                    setPriceError(
-                      'Informe preços válidos, com até 18 casas decimais.',
-                    )
-                  }
-                }}
-              >
-                <h2 className="font-bold">Faixa de preço em ETH</h2>
-
-                <label htmlFor="min-price" className="block">
-                  Preço mínimo
-                </label>
-
-                <Input
-                  id="min-price"
-                  name="minPrice"
-                  inputMode="decimal"
-                  defaultValue={filters.minPrice ?? ''}
-                  placeholder="0,00"
-                  aria-invalid={Boolean(priceError)}
-                  aria-describedby={priceError ? 'price-error' : undefined}
-                />
-
-                <label htmlFor="max-price" className="block">
-                  Preço máximo
-                </label>
-
-                <Input
-                  id="max-price"
-                  name="maxPrice"
-                  inputMode="decimal"
-                  defaultValue={filters.maxPrice ?? ''}
-                  placeholder="3,00"
-                  aria-invalid={Boolean(priceError)}
-                  aria-describedby={priceError ? 'price-error' : undefined}
-                />
-
-                {priceError && (
-                  <p
-                    id="price-error"
-                    role="alert"
-                    className="text-sm text-red-300"
-                  >
-                    {priceError}
-                  </p>
-                )}
-
-                <Button type="submit">Aplicar preço</Button>
-              </form>
-
-              <Button type="button" onClick={clearFilters}>
-                Limpar filtros
-              </Button>
               <FeaturedNft />
             </aside>
 
             <section aria-label="Catálogo de NFTs" className="min-w-0">
-              <label className="flex flex-wrap items-center gap-3">
-                Ordenar por
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#705039]/50 pb-3">
+                <h2 className="text-sm font-bold text-[#e6a15a]">
+                  Todos os NFTs
+                </h2>
 
-                <select
-                  value={filters.sort}
-                  onChange={(event) =>
-                    updateFilters({
-                      sort: event.target.value === 'name' ? 'name' : 'newest',
-                    })
-                  }
-                  className="rounded border border-[#705039] bg-[#281a13] p-2"
-                >
-                  <option value="newest">Mais recentes</option>
-                  <option value="name">Nome</option>
-                </select>
-              </label>
+                <label className="flex items-center gap-2 text-xs">
+                  Ordenar por
+
+                  <select
+                    value={filters.sort}
+                    onChange={(event) =>
+                      updateFilters({
+                        sort:
+                          event.target.value === 'name'
+                            ? 'name'
+                            : 'newest',
+                      })
+                    }
+                    className="rounded border border-[#705039] bg-[#281a13] p-2"
+                  >
+                    <option value="newest">Mais recentes</option>
+                    <option value="name">Nome</option>
+                  </select>
+                </label>
+              </div>
 
               {isPending ? (
                 <div
@@ -294,50 +209,60 @@ export function HomePage() {
                 </div>
               ) : (
                 <>
-                  <p className="mt-4" role="status">
+                  <p className="mt-4 text-xs text-[#c7aa88]" role="status">
                     {data?.total ?? 0} NFTs encontrados
                   </p>
 
                   {data?.items.length === 0 ? (
-                    <p className="mt-6">Nenhum NFT nesta página.</p>
+                    <p className="mt-6 text-sm">
+                      Nenhum NFT nesta página.
+                    </p>
                   ) : (
-                    <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                      {data?.items.map((nft) => (
-                        <article
-                          key={nft.id}
-                          className="bg-[#281a13] p-3"
-                        >
-                          <img
-                            src={nft.imageUrl}
-                            alt={nft.name}
-                            width={1254}
-                            height={1254}
-                            loading="lazy"
-                            decoding="async"
-                            className="aspect-square w-full rounded-lg object-cover"
-                          />
+                    <div className="mt-6 grid gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
+                      {data?.items.map((nft) => {
+                        const edition =
+                          nft.editions.find(
+                            (item) => item.name === '1/50',
+                          ) ?? nft.editions[0]
 
-                          <h2 className="mt-3 font-bold">
-  <Link
-    to="/nfts/$nftId"
-    params={{ nftId: nft.id }}
-    className="rounded-sm hover:text-[#e6a15a] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#e6a15a]"
-  >
-    {nft.name}
-  </Link>
-</h2>
+                        return (
+                          <article key={nft.id} className="min-w-0">
+                            <Link
+                              to="/nfts/$nftId"
+                              params={{ nftId: nft.id }}
+                              className="block rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#e6a15a]"
+                            >
+                              <div className="bg-[#281a13] p-3">
+                                <img
+                                  src={nft.imageUrl}
+                                  alt=""
+                                  width={1254}
+                                  height={1254}
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="aspect-square w-full rounded-lg object-cover"
+                                />
+                              </div>
 
-                          <p className="mt-2 text-[#e6a15a]">
-                            {nft.editions[0]?.priceEth} ETH
-                          </p>
-                        </article>
-                      ))}
+                              <h3 className="mt-3 text-sm">
+                                {nft.name}
+                              </h3>
+
+                              <p className="mt-2 text-sm font-bold text-[#e6a15a]">
+                                {edition
+                                  ? `${edition.priceEth} ETH`
+                                  : 'Sem edição disponível'}
+                              </p>
+                            </Link>
+                          </article>
+                        )
+                      })}
                     </div>
                   )}
 
                   <nav
                     aria-label="Paginação do catálogo"
-                    className="mt-6 flex flex-wrap items-center gap-4"
+                    className="mt-8 flex flex-wrap items-center gap-4 text-sm"
                   >
                     <Button
                       type="button"
@@ -370,8 +295,6 @@ export function HomePage() {
 
           <HomePromotions
             onExplore={(category) => {
-              setPriceError('')
-
               updateFilters({
                 search: '',
                 category: [category],

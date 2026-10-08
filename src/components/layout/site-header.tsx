@@ -1,6 +1,6 @@
+import { useRef, useState } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useCartItems } from '@/lib/cart-store'
-import { useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 
 interface SiteHeaderProps {
@@ -21,9 +21,13 @@ export function SiteHeader({
   onToggleSearch,
 }: SiteHeaderProps) {
   const { session, isLoading, openAuth, signOut } = useAuth()
-  const [authError, setAuthError] = useState('') 
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  const logoutBusyRef = useRef(false)
+  const [authError, setAuthError] = useState('')
+  const [isSigningOut, setIsSigningOut] = useState(false)
+
+  const location = useRouterState({
+    select: (state) => state.location,
   })
 
   const items = useCartItems()
@@ -32,7 +36,12 @@ export function SiteHeader({
     0,
   )
 
-  const isHome = pathname === '/'
+  const isHome =
+    location.pathname === '/' && location.hash !== 'catalogo'
+
+  const isMarket =
+    (location.pathname === '/' && location.hash === 'catalogo') ||
+    location.pathname.startsWith('/nfts/')
 
   const navigationClass = (active: boolean) =>
     `flex min-h-16 items-center border-b-2 text-xs transition-colors ${
@@ -40,6 +49,32 @@ export function SiteHeader({
         ? 'border-[#cf8946] text-[#e6a15a]'
         : 'border-transparent text-[#f5eee8] hover:text-[#e6a15a]'
     }`
+
+  function closeAccountMenu() {
+    if (detailsRef.current) {
+      detailsRef.current.open = false
+    }
+  }
+
+  async function handleSignOut() {
+    if (logoutBusyRef.current) {
+      return
+    }
+
+    logoutBusyRef.current = true
+    setIsSigningOut(true)
+    setAuthError('')
+
+    try {
+      await signOut()
+      closeAccountMenu()
+    } catch {
+      setAuthError('Não foi possível sair. Tente novamente.')
+    } finally {
+      logoutBusyRef.current = false
+      setIsSigningOut(false)
+    }
+  }
 
   return (
     <header className="px-6">
@@ -61,6 +96,7 @@ export function SiteHeader({
               <Link
                 to="/"
                 search={initialSearch}
+                aria-current={isHome ? 'page' : undefined}
                 className={navigationClass(isHome)}
               >
                 Início
@@ -72,7 +108,8 @@ export function SiteHeader({
                 to="/"
                 search={initialSearch}
                 hash="catalogo"
-                className={navigationClass(!isHome)}
+                aria-current={isMarket ? 'page' : undefined}
+                className={navigationClass(isMarket)}
               >
                 Mercado
               </Link>
@@ -147,42 +184,95 @@ export function SiteHeader({
             </span>
           </Link>
 
-          <div className="relative">
-  <button
-    type="button"
-    disabled={isLoading}
-    onClick={() => {
-      setAuthError('')
+          {isLoading ? (
+            <button
+              type="button"
+              disabled
+              className="rounded-md bg-[#cf8946] px-3 py-2 text-xs font-bold text-[#160e0a]"
+            >
+              Aguarde...
+            </button>
+          ) : session ? (
+            <details
+              ref={detailsRef}
+              key={session.user.id}
+              className="relative"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  closeAccountMenu()
+                  detailsRef.current
+                    ?.querySelector<HTMLElement>('summary')
+                    ?.focus()
+                }
+              }}
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) {
+                  closeAccountMenu()
+                }
+              }}
+            >
+              <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md bg-[#cf8946] px-3 py-2 text-xs font-bold text-[#160e0a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e6a15a] [&::-webkit-details-marker]:hidden">
+                Minha conta
+                <span aria-hidden="true">▾</span>
+              </summary>
 
-      if (!session) {
-        openAuth()
-        return
-      }
+              <nav
+                aria-label="Menu da conta"
+                className="absolute right-0 top-full z-30 mt-2 w-56 rounded-md border border-[#705039] bg-[#281a13] p-2 text-sm shadow-lg"
+              >
+                <p className="truncate border-b border-[#705039]/50 px-3 py-3 text-xs text-[#c7aa88]">
+                  {session.user.username}
+                </p>
 
-      void signOut().catch(() => {
-        setAuthError('Não foi possível sair. Tente novamente.')
-      })
-    }}
-    className="flex items-center gap-2 rounded-md bg-[#cf8946] px-3 py-2 text-xs font-bold text-[#160e0a]"
-  >
-    {isLoading ? 'Aguarde...' : session ? 'Sair' : 'Entrar'}
-  </button>
+                <Link
+                  to="/perfil"
+                  onClick={closeAccountMenu}
+                  className="block rounded px-3 py-3 hover:bg-[#36251c] focus-visible:outline-2 focus-visible:outline-[#e6a15a]"
+                >
+                  Meu perfil
+                </Link>
 
-  {session && (
-    <span className="sr-only">
-      Conectado como {session.user.username}
-    </span>
-  )}
+                <Link
+                  to="/carteiras"
+                  onClick={closeAccountMenu}
+                  className="block rounded px-3 py-3 hover:bg-[#36251c] focus-visible:outline-2 focus-visible:outline-[#e6a15a]"
+                >
+                  Carteiras
+                </Link>
 
-  {authError && (
-    <p
-      role="alert"
-      className="absolute right-0 top-full z-10 mt-2 w-56 rounded bg-[#281a13] p-3 text-xs text-red-300"
-    >
-      {authError}
-    </p>
-  )}
-</div>
+                <Link
+                  to="/favoritos"
+                  onClick={closeAccountMenu}
+                  className="block rounded px-3 py-3 hover:bg-[#36251c] focus-visible:outline-2 focus-visible:outline-[#e6a15a]"
+                >
+                  Lista de interesse
+                </Link>
+
+                <button
+                  type="button"
+                  disabled={isSigningOut}
+                  onClick={() => void handleSignOut()}
+                  className="mt-1 w-full border-t border-[#705039]/50 px-3 py-3 text-left text-[#e6a15a] disabled:opacity-50"
+                >
+                  {isSigningOut ? 'Saindo...' : 'Sair'}
+                </button>
+
+                {authError && (
+                  <p role="alert" className="px-3 pb-3 text-xs text-red-300">
+                    {authError}
+                  </p>
+                )}
+              </nav>
+            </details>
+          ) : (
+            <button
+              type="button"
+              onClick={openAuth}
+              className="flex items-center gap-2 rounded-md bg-[#cf8946] px-3 py-2 text-xs font-bold text-[#160e0a]"
+            >
+              Entrar
+            </button>
+          )}
         </div>
       </div>
     </header>
