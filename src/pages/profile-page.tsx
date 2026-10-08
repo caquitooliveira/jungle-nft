@@ -87,10 +87,16 @@ export function ProfilePage() {
                 Carteiras
             </Link>
 
+            <Link
+  to="/favoritos"
+  className="block px-4 py-3 text-sm text-[#b79460]"
+>
+  Lista de interesse
+</Link>
+
             {[
               
               'Atividade',
-              'Lista de interesse',
               'Ofertas',
               'Arquivos baixados',
               'Suporte',

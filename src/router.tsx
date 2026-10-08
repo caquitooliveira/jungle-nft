@@ -13,6 +13,9 @@ import { ProfilePage } from '@/pages/profile-page'
 import { NotFoundPage } from '@/pages/not-found-page'
 import { validateCatalogSearch } from '@/lib/catalog-search'
 import { WalletsPage } from '@/pages/wallets-page'
+import { FavoritesPage } from '@/pages/favorites-page'
+
+
 
 const walletsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -62,6 +65,12 @@ const profileRoute = createRoute({
   component: ProfilePage,
 })
 
+const favoritesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/favoritos',
+  component: FavoritesPage,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   nftDetailRoute,
@@ -70,6 +79,7 @@ const routeTree = rootRoute.addChildren([
   orderRoute,
   profileRoute,
   walletsRoute,
+  favoritesRoute,
 ])
 
 export const router = createRouter({
