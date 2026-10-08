@@ -9,7 +9,9 @@ import { SiteHeader } from '@/components/layout/site-header'
 import { SiteFooter } from '@/components/layout/site-footer'
 import { useAuth } from '@/lib/auth-context'
 import { useCartItems } from '@/lib/cart-store'
+import { getSessionToken } from '@/services/auth-service'
 import { getCartQuote } from '@/services/cart-service'
+import { getWallets } from '@/services/wallet-service'
 import { createOrder, getOrderByKey } from '@/services/order-service'
 import type { CartQuote } from '@/types/cart'
 import type { AuthSession } from '@/types/auth'
@@ -19,6 +21,7 @@ import type {
   WalletProvider,
 } from '@/types/order'
 import type { Network } from '@/types/nft'
+import type { SavedWallet } from '@/types/profile'
 
 interface CheckoutDraft {
   profile: CollectorProfile
@@ -97,16 +100,54 @@ function readDraft(session: AuthSession): CheckoutDraft {
     )
 
     if (saved) {
-      const draft = JSON.parse(saved) as CheckoutDraft
+      const value: unknown = JSON.parse(saved)
+
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return initialDraft
+      }
+
+      const stored = value as Record<string, unknown>
+      const profile = { ...initialDraft.profile }
+
+      if (
+        stored.profile &&
+        typeof stored.profile === 'object' &&
+        !Array.isArray(stored.profile)
+      ) {
+        const storedProfile =
+          stored.profile as Record<string, unknown>
+
+        for (const key of Object.keys(profile) as Array<
+          keyof CollectorProfile
+        >) {
+          if (typeof storedProfile[key] === 'string') {
+            profile[key] = storedProfile[key]
+          }
+        }
+      }
+
+      if (profile.ensName === '.eth' || profile.ensName === '.sol') {
+        profile.ensName = ''
+      }
 
       return {
-        ...initialDraft,
-        ...draft,
-        profile: {
-          ...initialDraft.profile,
-          ...draft.profile,
-          ensName: draft.profile?.ensName || '.eth',
-        },
+        profile,
+        network:
+          stored.network === 'ethereum' ||
+          stored.network === 'polygon' ||
+          stored.network === 'solana'
+            ? stored.network
+            : initialDraft.network,
+        provider:
+          stored.provider === 'metamask' ||
+          stored.provider === 'walletconnect' ||
+          stored.provider === 'coinbase'
+            ? stored.provider
+            : initialDraft.provider,
+        address:
+          typeof stored.address === 'string' ? stored.address : '',
+        coupon:
+          typeof stored.coupon === 'string' ? stored.coupon : '',
       }
     }
   } catch {
@@ -255,6 +296,23 @@ function CheckoutForm({ session }: { session: AuthSession }) {
     staleTime: 0,
   })
 
+  const walletsQuery = useQuery({
+    queryKey: ['private', session.user.id, 'wallets'],
+    queryFn: ({ signal }) => getWallets(signal),
+    enabled: !attempt,
+    retry: false,
+    staleTime: 0,
+  })
+
+  const savedWallets = walletsQuery.data ?? []
+
+  const selectedWallet = savedWallets.find(
+    (wallet) =>
+      wallet.address === draft.address.trim() &&
+      wallet.network === draft.network &&
+      wallet.provider === draft.provider,
+  )
+
   function updateDraft(nextDraft: CheckoutDraft) {
     try {
       sessionStorage.setItem(
@@ -269,7 +327,33 @@ function CheckoutForm({ session }: { session: AuthSession }) {
     }
   }
 
+  function useSavedWallet(wallet: SavedWallet) {
+    updateDraft({
+      ...draft,
+      network: wallet.network,
+      address: wallet.address,
+      provider: wallet.provider,
+      profile: {
+        ...draft.profile,
+        profileName: wallet.profileName,
+        referralCode: wallet.referralCode,
+        ensName: wallet.ensName,
+        secondaryWallet: wallet.secondaryAddress,
+      },
+    })
+  }
+
+  function ensureCurrentSession() {
+    if (getSessionToken() !== session.token) {
+      throw new Error(
+        'Sua sessão mudou. Entre novamente antes de confirmar a compra.',
+      )
+    }
+  }
+
   async function finishOrder(currentAttempt: OrderAttempt) {
+    ensureCurrentSession()
+
     let order
 
     try {
@@ -282,11 +366,15 @@ function CheckoutForm({ session }: { session: AuthSession }) {
         throw error
       }
 
+      ensureCurrentSession()
+
       order = await createOrder(
         currentAttempt.payload,
         currentAttempt.key,
       )
     }
+
+    ensureCurrentSession()
 
     await navigate({
       to: '/pedidos/$orderId',
@@ -304,6 +392,8 @@ function CheckoutForm({ session }: { session: AuthSession }) {
     setError('')
 
     try {
+      ensureCurrentSession()
+
       if (attempt) {
         await finishOrder(attempt)
         return
@@ -317,6 +407,8 @@ function CheckoutForm({ session }: { session: AuthSession }) {
         items,
         coupon: draft.coupon || undefined,
       })
+
+      ensureCurrentSession()
 
       if (
         quoteSignature(latestQuote) !== quoteSignature(quote.data)
@@ -357,12 +449,19 @@ function CheckoutForm({ session }: { session: AuthSession }) {
         [400, 409].includes(error.response?.status ?? 0) &&
         error.response?.data?.code !== 'IDEMPOTENCY_CONFLICT'
       ) {
-        sessionStorage.removeItem(
-          `kurio:order-attempt:${session.user.id}`,
-        )
+        try {
+          sessionStorage.removeItem(
+            `kurio:order-attempt:${session.user.id}`,
+          )
 
-        setAttempt(null)
-        void quote.refetch()
+          setAttempt(null)
+          void quote.refetch()
+        } catch {
+          setError(
+            'Não foi possível atualizar a tentativa salva. Recarregue a página antes de tentar novamente.',
+          )
+          return
+        }
       }
 
       setError(getErrorMessage(error))
@@ -399,25 +498,83 @@ function CheckoutForm({ session }: { session: AuthSession }) {
         void submitOrder()
       }}
     >
-      <CollectorProfileForm
-        profile={draft.profile}
-        network={draft.network}
-        address={draft.address}
-        provider={draft.provider}
-        disabled={isSubmitting || Boolean(attempt)}
-        onProfileChange={(profile) =>
-          updateDraft({ ...draft, profile })
-        }
-        onNetworkChange={(network) =>
-          updateDraft({ ...draft, network, address: '' })
-        }
-        onAddressChange={(address) =>
-          updateDraft({ ...draft, address })
-        }
-        onProviderChange={(provider) =>
-          updateDraft({ ...draft, provider })
-        }
-      />
+      <div className="min-w-0">
+        {savedWallets.length > 0 && !attempt && (
+          <div className="mb-6">
+            <label
+              htmlFor="checkout-saved-wallet"
+              className="text-sm"
+            >
+              Carteira cadastrada
+            </label>
+
+            <select
+              id="checkout-saved-wallet"
+              disabled={isSubmitting}
+              value={selectedWallet?.id ?? ''}
+              onChange={(event) => {
+                const wallet = savedWallets.find(
+                  (entry) => entry.id === event.target.value,
+                )
+
+                if (wallet) {
+                  useSavedWallet(wallet)
+                } else {
+                  updateDraft({ ...draft, address: '' })
+                }
+              }}
+              className={`${fieldClass} bg-[#160e0a]`}
+            >
+              <option value="">Informar endereço manualmente</option>
+
+              {savedWallets.map((wallet) => (
+                <option key={wallet.id} value={wallet.id}>
+                  {wallet.nickname} — {wallet.network}
+                  {wallet.isPrimary ? ' — Principal' : ' — Secundária'}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {walletsQuery.isError && !attempt && (
+          <div role="alert" className="mb-6 text-xs text-red-300">
+            <p>
+              Não foi possível carregar suas carteiras salvas.
+              Você pode preencher o endereço manualmente.
+            </p>
+
+            <button
+              type="button"
+              disabled={walletsQuery.isFetching}
+              onClick={() => void walletsQuery.refetch()}
+              className="mt-2 underline"
+            >
+              Tentar carregar novamente
+            </button>
+          </div>
+        )}
+
+        <CollectorProfileForm
+          profile={draft.profile}
+          network={draft.network}
+          address={draft.address}
+          provider={draft.provider}
+          disabled={isSubmitting || Boolean(attempt)}
+          onProfileChange={(profile) =>
+            updateDraft({ ...draft, profile })
+          }
+          onNetworkChange={(network) =>
+            updateDraft({ ...draft, network, address: '' })
+          }
+          onAddressChange={(address) =>
+            updateDraft({ ...draft, address })
+          }
+          onProviderChange={(provider) =>
+            updateDraft({ ...draft, provider })
+          }
+        />
+      </div>
 
       <section
         aria-labelledby="checkout-summary-title"
@@ -565,18 +722,9 @@ function CheckoutForm({ session }: { session: AuthSession }) {
           </legend>
 
           {[
-            {
-              value: 'walletconnect',
-              label: 'WalletConnect',
-            },
-            {
-              value: 'metamask',
-              label: 'MetaMask',
-            },
-            {
-              value: 'coinbase',
-              label: 'Coinbase Wallet',
-            },
+            { value: 'walletconnect', label: 'WalletConnect' },
+            { value: 'metamask', label: 'MetaMask' },
+            { value: 'coinbase', label: 'Coinbase Wallet' },
           ].map((wallet) => (
             <label
               key={wallet.value}
@@ -615,16 +763,14 @@ function CheckoutForm({ session }: { session: AuthSession }) {
         )}
 
         {error && (
-          <p
-            role="alert"
-            className="mt-4 text-sm text-red-300"
-          >
+          <p role="alert" className="mt-4 text-sm text-red-300">
             {error}
           </p>
         )}
 
         <Button
           type="submit"
+          formNoValidate={Boolean(attempt)}
           disabled={
             isSubmitting ||
             (!attempt && (!quote.isSuccess || quote.isFetching))
