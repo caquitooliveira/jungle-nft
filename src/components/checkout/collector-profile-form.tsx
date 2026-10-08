@@ -145,8 +145,8 @@ export function CollectorProfileForm({
             maxLength={44}
             pattern={
               network === 'solana'
-                ? '[1-9A-HJ-NP-Za-km-z]{32,44}'
-                : '0x[a-fA-F0-9]{40}'
+                ? '11111111111111111111111111111111'
+                : '0x1111111111111111111111111111111111111111'
             }
             value={address}
             onChange={(event) => onAddressChange(event.target.value)}

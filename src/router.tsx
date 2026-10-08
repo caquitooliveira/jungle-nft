@@ -11,6 +11,13 @@ import { CheckoutPage } from '@/pages/checkout-page'
 import { OrderConfirmationPage } from '@/pages/order-confirmation-page'
 import { NotFoundPage } from '@/pages/not-found-page'
 import { validateCatalogSearch } from '@/lib/catalog-search'
+import { ProfilePage } from '@/pages/profile-page'
+
+const profileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/perfil',
+  component: ProfilePage,
+})
 
 const rootRoute = createRootRoute({
   component: Outlet,
@@ -54,6 +61,7 @@ const routeTree = rootRoute.addChildren([
   cartRoute,
   checkoutRoute,
   orderRoute,
+  profileRoute,
 ])
 
 export const router = createRouter({
