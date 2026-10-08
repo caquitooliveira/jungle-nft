@@ -12,6 +12,7 @@ import {
   saveProfile,
 } from '@/services/profile-service'
 import type { UserProfile } from '@/types/profile'
+import { Link } from '@tanstack/react-router'
 
 const fieldClass =
   'mt-2 h-10 w-full rounded border border-[#705039]/60 bg-transparent px-3 text-sm'
@@ -79,8 +80,15 @@ export function ProfilePage() {
               Dados do perfil
             </span>
 
+            <Link
+            to="/carteiras"
+            className= "block px-4 py-3 text-[#b79460]"
+            >
+                Carteiras
+            </Link>
+
             {[
-              'Carteiras',
+              
               'Atividade',
               'Lista de interesse',
               'Ofertas',

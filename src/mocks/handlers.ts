@@ -6,6 +6,7 @@ import { ethToWei } from '@/lib/eth'
 import { authHandlers } from './auth-handlers'
 import { orderHandlers } from './order-handlers'
 import { profileHandlers } from './profile-handlers'
+import { walletHandlers } from './wallet-handlers'
 
 function positiveInteger(
   value: string | null,
@@ -24,6 +25,7 @@ export const handlers = [
   ...cartHandlers,
   ...orderHandlers,
   ...profileHandlers,
+  ...walletHandlers,
   
   http.get('/api/nfts', async ({ request }) => {
     await delay(400)
