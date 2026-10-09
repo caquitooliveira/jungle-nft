@@ -11,6 +11,7 @@ import { CatalogSidebar } from '@/components/home/catalog-sidebar'
 import { FeaturedNft } from '@/components/home/featured-nft'
 import { SiteHeader } from '@/components/layout/site-header'
 import { SiteFooter } from '@/components/layout/site-footer'
+import { MobileNavigation } from '@/components/layout/mobile-navigation'
 import type { CatalogSearch } from '@/lib/catalog-search'
 import { getNfts } from '@/services/nft-service'
 
@@ -26,15 +27,10 @@ export function HomePage() {
     queryFn: ({ signal }) => getNfts({ ...filters, pageSize }, signal),
   })
 
-  // A base atual possui 24 NFTs. Esta consulta traz o catálogo
-  // completo para calcular as contagens, sem usar só a página visível.
   const countsQuery = useQuery({
     queryKey: ['nfts', { sort: 'newest', page: 1, pageSize: 50 }],
     queryFn: ({ signal }) =>
-      getNfts(
-        { sort: 'newest', page: 1, pageSize: 50 },
-        signal,
-      ),
+      getNfts({ sort: 'newest', page: 1, pageSize: 50 }, signal),
   })
 
   function updateFilters(changes: Partial<CatalogSearch>) {
@@ -74,6 +70,32 @@ export function HomePage() {
     Math.ceil((data?.total ?? 0) / pageSize),
   )
 
+  const sidebar = (
+    <CatalogSidebar
+      filters={filters}
+      nfts={countsQuery.data?.items ?? []}
+      countsReady={countsQuery.isSuccess}
+      onToggle={toggleFilter}
+      onUpdate={updateFilters}
+      onClear={clearFilters}
+    />
+  )
+
+  const countsError = countsQuery.isError ? (
+    <div role="alert" className="mt-4 text-xs text-red-300">
+      <p>Não foi possível carregar as contagens.</p>
+
+      <button
+        type="button"
+        disabled={countsQuery.isFetching}
+        onClick={() => void countsQuery.refetch()}
+        className="mt-2 underline"
+      >
+        Tentar novamente
+      </button>
+    </div>
+  ) : null
+
   return (
     <div className="min-h-screen bg-[#160e0a] font-mono text-[#f5eee8]">
       <SiteHeader
@@ -81,81 +103,71 @@ export function HomePage() {
         onToggleSearch={() => setIsSearchOpen((previous) => !previous)}
       />
 
-      <main className="px-6 pb-10">
+      <main className="px-4 pb-10 md:px-6">
         <div className="mx-auto max-w-6xl">
-          <HomeHero />
+          <form
+            id="catalog-search-panel"
+            className={`mt-4 flex min-w-0 gap-2 ${
+              isSearchOpen ? '' : 'md:hidden'
+            }`}
+            onSubmit={(event) => {
+              event.preventDefault()
 
-          {isSearchOpen && (
-            <form
-              id="catalog-search-panel"
-              className="mt-6 flex gap-3"
-              onSubmit={(event) => {
-                event.preventDefault()
+              const form = new FormData(event.currentTarget)
 
-                const form = new FormData(event.currentTarget)
+              updateFilters({
+                search: String(form.get('search') ?? '').trim(),
+              })
+            }}
+          >
+            <label htmlFor="catalog-search" className="sr-only">
+              Buscar NFT ou criador
+            </label>
 
-                updateFilters({
-                  search: String(form.get('search') ?? '').trim(),
-                })
-              }}
+            <Input
+              key={filters.search}
+              id="catalog-search"
+              name="search"
+              defaultValue={filters.search}
+              placeholder="Explorar coleções"
+              className="h-12 min-w-0 rounded-xl border-[#705039] bg-[#281a13]"
+            />
+
+            <Button
+              type="submit"
+              className="h-12 shrink-0 rounded-xl bg-[#cf8946] text-[#160e0a] hover:bg-[#e6a15a]"
             >
-              <label htmlFor="catalog-search" className="sr-only">
-                Buscar NFT ou criador
-              </label>
+              Buscar
+            </Button>
+          </form>
 
-              <Input
-                autoFocus
-                key={filters.search}
-                id="catalog-search"
-                name="search"
-                defaultValue={filters.search}
-                placeholder="Buscar NFT ou criador"
-                className="border-[#705039] bg-[#281a13]"
-              />
-
-              <Button
-                type="submit"
-                className="bg-[#cf8946] text-[#160e0a] hover:bg-[#e6a15a]"
-              >
-                Buscar
-              </Button>
-            </form>
-          )}
+          <HomeHero />
 
           <div
             id="catalogo"
-            className="mt-8 grid scroll-mt-6 items-start gap-8 md:grid-cols-[260px_minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)]"
+            className="mt-6 grid scroll-mt-6 items-start gap-5 md:mt-8 md:grid-cols-[260px_minmax(0,1fr)] md:gap-8 lg:grid-cols-[300px_minmax(0,1fr)]"
           >
-            <aside className="min-w-0 space-y-6">
-              <CatalogSidebar
-                filters={filters}
-                nfts={countsQuery.data?.items ?? []}
-                countsReady={countsQuery.isSuccess}
-                onToggle={toggleFilter}
-                onUpdate={updateFilters}
-                onClear={clearFilters}
-              />
+            <aside className="min-w-0">
+              <details className="md:hidden">
+                <summary className="cursor-pointer rounded-xl border border-[#705039] bg-[#281a13] px-4 py-3 text-sm text-[#e6a15a]">
+                  Filtros do catálogo
+                </summary>
 
-              {countsQuery.isError && (
-                <div role="alert" className="text-xs text-red-300">
-                  <p>Não foi possível carregar as contagens.</p>
-
-                  <button
-                    type="button"
-                    disabled={countsQuery.isFetching}
-                    onClick={() => void countsQuery.refetch()}
-                    className="mt-2 underline"
-                  >
-                    Tentar novamente
-                  </button>
+                <div className="mt-4">
+                  {sidebar}
+                  {countsError}
                 </div>
-              )}
+              </details>
 
-              <FeaturedNft />
+              <div className="hidden space-y-6 md:block">
+                {sidebar}
+                {countsError}
+                <FeaturedNft />
+              </div>
             </aside>
 
             <section aria-label="Catálogo de NFTs" className="min-w-0">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#705039]/50 pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#705039]/50 pb-3">
                 <h2 className="text-sm font-bold text-[#e6a15a]">
                   Todos os NFTs
                 </h2>
@@ -173,7 +185,7 @@ export function HomePage() {
                             : 'newest',
                       })
                     }
-                    className="rounded border border-[#705039] bg-[#281a13] p-2"
+                    className="min-h-10 rounded border border-[#705039] bg-[#281a13] p-2"
                   >
                     <option value="newest">Mais recentes</option>
                     <option value="name">Nome</option>
@@ -183,7 +195,7 @@ export function HomePage() {
 
               {isPending ? (
                 <div
-                  className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
+                  className="mt-6 grid grid-cols-2 gap-3 md:gap-6 lg:grid-cols-3"
                   role="status"
                   aria-label="Carregando NFTs"
                 >
@@ -209,7 +221,10 @@ export function HomePage() {
                 </div>
               ) : (
                 <>
-                  <p className="mt-4 text-xs text-[#c7aa88]" role="status">
+                  <p
+                    className="mt-4 text-xs text-[#c7aa88]"
+                    role="status"
+                  >
                     {data?.total ?? 0} NFTs encontrados
                   </p>
 
@@ -218,7 +233,7 @@ export function HomePage() {
                       Nenhum NFT nesta página.
                     </p>
                   ) : (
-                    <div className="mt-6 grid gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6 md:gap-x-5 md:gap-y-8 lg:grid-cols-3">
                       {data?.items.map((nft) => {
                         const edition =
                           nft.editions.find(
@@ -232,23 +247,23 @@ export function HomePage() {
                               params={{ nftId: nft.id }}
                               className="block rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#e6a15a]"
                             >
-                              <div className="bg-[#281a13] p-3">
+                              <div className="rounded-3xl bg-[#281a13] p-1.5 md:rounded-none md:p-3">
                                 <img
                                   src={nft.imageUrl}
                                   alt=""
-                                  width={1254}
-                                  height={1254}
+                                  width={960}
+                                  height={960}
                                   loading="lazy"
                                   decoding="async"
-                                  className="aspect-square w-full rounded-lg object-cover"
+                                  className="aspect-square w-full rounded-2xl object-cover md:rounded-lg"
                                 />
                               </div>
 
-                              <h3 className="mt-3 text-sm">
+                              <h3 className="mt-2 break-words text-xs md:mt-3 md:text-sm">
                                 {nft.name}
                               </h3>
 
-                              <p className="mt-2 text-sm font-bold text-[#e6a15a]">
+                              <p className="mt-1 text-sm font-bold text-[#e6a15a] md:mt-2">
                                 {edition
                                   ? `${edition.priceEth} ETH`
                                   : 'Sem edição disponível'}
@@ -262,7 +277,7 @@ export function HomePage() {
 
                   <nav
                     aria-label="Paginação do catálogo"
-                    className="mt-8 flex flex-wrap items-center gap-4 text-sm"
+                    className="mt-8 flex flex-wrap items-center justify-center gap-3 text-xs md:justify-start md:gap-4 md:text-sm"
                   >
                     <Button
                       type="button"
@@ -314,9 +329,11 @@ export function HomePage() {
         </div>
       </main>
 
-      <div className="px-6 pb-6">
+      <div className="px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] md:px-6 md:pb-6">
         <SiteFooter />
       </div>
+
+      <MobileNavigation />
     </div>
   )
 }

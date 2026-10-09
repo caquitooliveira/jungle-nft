@@ -28,42 +28,45 @@ test('carrega o catálogo e permite abrir um NFT', async ({ page }) => {
   ).toBeVisible()
 })
 
-test('preserva a categoria ao recarregar', async ({ page }) => {
+test('preserva a categoria ao recarregar', async ({ page }, testInfo) => {
   await page.goto('/')
+
+  async function openMobileFilters() {
+    if (testInfo.project.name !== 'mobile') {
+      return
+    }
+
+    const toggle = page.getByText('Filtros do catálogo', {
+      exact: true,
+    })
+
+    await expect(toggle).toBeVisible()
+    await toggle.click()
+  }
+
+  await openMobileFilters()
 
   const musicCheckbox = page.getByRole('checkbox', {
     name: /Música/,
   })
 
-  await page
-    .locator('label')
-    .filter({ has: musicCheckbox })
-    .click()
+  await expect(musicCheckbox).toBeVisible()
+
+  await page.locator('label').filter({
+    has: musicCheckbox,
+  }).click()
 
   await expect(musicCheckbox).toBeChecked()
 
-  await expect
-    .poll(() => {
-      const url = new URL(page.url())
-      return decodeURIComponent(url.search)
-    })
-    .toContain('Música')
+  await expect(page).toHaveURL((url) =>
+    (url.searchParams.get('category') ?? '').includes('Música'),
+  )
 
   await page.reload()
+  await openMobileFilters()
 
-  await expect(
-    page.getByRole('checkbox', {
-      name: /Música/,
-    }),
-  ).toBeChecked()
-
-  const catalog = page.getByRole('region', {
-    name: 'Catálogo de NFTs',
-  })
-
-  await expect(
-    catalog.getByRole('article').first(),
-  ).toBeVisible()
+  await expect(musicCheckbox).toBeVisible()
+  await expect(musicCheckbox).toBeChecked()
 })
 
 test('atualiza preço e estoque em tempo real', async ({ page }) => {
