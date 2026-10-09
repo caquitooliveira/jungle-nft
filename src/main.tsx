@@ -9,7 +9,15 @@ async function bootstrap() {
   if (import.meta.env.VITE_ENABLE_MOCKS === 'true') {
     const { worker } = await import('./mocks/browser')
 
-    await worker.start()
+    await worker.start({
+  onUnhandledRequest(request, print) {
+    const url = new URL(request.url)
+
+    if (url.pathname.startsWith('/api/')) {
+      print.warning()
+    }
+  },
+})
   }
 
   createRoot(document.getElementById('root')!).render(

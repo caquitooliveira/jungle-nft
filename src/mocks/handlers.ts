@@ -8,6 +8,8 @@ import { orderHandlers } from './order-handlers'
 import { profileHandlers } from './profile-handlers'
 import { walletHandlers } from './wallet-handlers'
 import { favoriteHandlers } from './favorite-handlers'
+import { realtimeHandlers } from './realtime-handlers'
+
 
 function positiveInteger(
   value: string | null,
@@ -28,7 +30,7 @@ export const handlers = [
   ...profileHandlers,
   ...walletHandlers,
   ...favoriteHandlers,
-  
+  ...realtimeHandlers,
   http.get('/api/nfts', async ({ request }) => {
     await delay(400)
 
