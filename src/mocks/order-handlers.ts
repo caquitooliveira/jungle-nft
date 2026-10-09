@@ -1,6 +1,7 @@
 import { delay, http, HttpResponse } from 'msw'
 import { findSession } from './auth-db'
 import { calculateCartQuote, MockApiError } from './cart-quote'
+import { processOrderInventory } from './nft-db'
 import type { CartQuote } from '@/types/cart'
 import type {
   CollectorProfile,
@@ -85,7 +86,11 @@ function quoteSignature(quote: CartQuote) {
 }
 
 function readProfile(value: unknown): CollectorProfile {
-  if (!value || typeof value !== 'object') {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value)
+  ) {
     throw new MockApiError(
       400,
       'INVALID_PROFILE',
@@ -95,7 +100,7 @@ function readProfile(value: unknown): CollectorProfile {
 
   const raw = value as Record<string, unknown>
 
-  const field = (name: string, required = false) => {
+  function field(name: string, required = false) {
     const value = raw[name]
 
     if (value !== undefined && typeof value !== 'string') {
@@ -130,7 +135,10 @@ function readProfile(value: unknown): CollectorProfile {
     observation: field('observation'),
   }
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email)) {
+  if (
+    profile.email.length > 254 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email)
+  ) {
     throw new MockApiError(
       400,
       'INVALID_PROFILE',
@@ -142,7 +150,11 @@ function readProfile(value: unknown): CollectorProfile {
 }
 
 function readWallet(value: unknown): CheckoutWallet {
-  if (!value || typeof value !== 'object') {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value)
+  ) {
     throw new MockApiError(
       400,
       'INVALID_WALLET',
@@ -189,6 +201,58 @@ function readWallet(value: unknown): CheckoutWallet {
   }
 }
 
+async function withOrderLock<T>(
+  operation: () => T,
+): Promise<T> {
+  if (navigator.locks) {
+    return navigator.locks.request(
+      'kurio:finalize-order',
+      operation,
+    )
+  }
+
+  return operation()
+}
+
+async function finalizeOrder(
+  userId: string,
+  orderId: string,
+): Promise<Order | null> {
+  return withOrderLock(() => {
+    const orders = readOrders()
+    const stored = orders.find(
+      (entry) =>
+        entry.order.id === orderId &&
+        entry.order.userId === userId,
+    )
+
+    if (!stored) {
+      return null
+    }
+
+    if (
+      stored.order.status === 'pending' &&
+      stored.order.readyAt <= Date.now()
+    ) {
+      const status = processOrderInventory(
+        stored.order.id,
+        stored.order.quote.items,
+      )
+
+      stored.order = {
+        ...stored.order,
+        status,
+        updatedAt: new Date().toISOString(),
+        version: stored.order.version + 1,
+      }
+
+      saveOrders(orders)
+    }
+
+    return stored.order
+  })
+}
+
 export const orderHandlers = [
   http.post('/api/orders', async ({ request }) => {
     await delay(300)
@@ -216,95 +280,129 @@ export const orderHandlers = [
     try {
       const raw: unknown = await request.json()
 
-      if (!raw || typeof raw !== 'object') {
+      if (
+        !raw ||
+        typeof raw !== 'object' ||
+        Array.isArray(raw)
+      ) {
         return fail(400, 'INVALID_ORDER', 'Pedido inválido.')
       }
 
       const body = raw as Record<string, unknown>
       const fingerprint = stableStringify(body)
-      const orders = readOrders()
 
-      const existing = orders.find(
-        (entry) =>
-          entry.order.userId === session.user.id &&
-          entry.order.idempotencyKey === idempotencyKey,
-      )
+      return await withOrderLock(() => {
+        const orders = readOrders()
 
-      if (existing) {
-        if (existing.fingerprint !== fingerprint) {
+        const existing = orders.find(
+          (entry) =>
+            entry.order.userId === session.user.id &&
+            entry.order.idempotencyKey === idempotencyKey,
+        )
+
+        if (existing) {
+          if (existing.fingerprint !== fingerprint) {
+            return fail(
+              409,
+              'IDEMPOTENCY_CONFLICT',
+              'Esta tentativa já foi usada para outro conteúdo.',
+            )
+          }
+
+          return HttpResponse.json(existing.order)
+        }
+
+        const profile = readProfile(body.profile)
+        const wallet = readWallet(body.wallet)
+        const quote = calculateCartQuote(body)
+
+        if (!quote.items.length) {
           return fail(
-            409,
-            'IDEMPOTENCY_CONFLICT',
-            'Esta tentativa já foi usada para outro conteúdo.',
+            400,
+            'EMPTY_CART',
+            'Seu carrinho está vazio.',
           )
         }
 
-        return HttpResponse.json(existing.order)
-      }
+        if (
+          !body.acceptedQuote ||
+          typeof body.acceptedQuote !== 'object' ||
+          Array.isArray(body.acceptedQuote)
+        ) {
+          return fail(
+            400,
+            'QUOTE_REQUIRED',
+            'Confira o resumo antes de confirmar a compra.',
+          )
+        }
 
-      const profile = readProfile(body.profile)
-      const wallet = readWallet(body.wallet)
-      const quote = calculateCartQuote(body)
+        const acceptedQuote = body.acceptedQuote as CartQuote
 
-      if (!quote.items.length) {
-        return fail(400, 'EMPTY_CART', 'Seu carrinho está vazio.')
-      }
+        if (
+          !Array.isArray(acceptedQuote.items) ||
+          acceptedQuote.items.some(
+            (item) =>
+              !item ||
+              typeof item !== 'object' ||
+              Array.isArray(item),
+          )
+        ) {
+          return fail(
+            400,
+            'QUOTE_REQUIRED',
+            'Resumo inválido.',
+          )
+        }
 
-      if (
-        !body.acceptedQuote ||
-        typeof body.acceptedQuote !== 'object'
-      ) {
-        return fail(
-          400,
-          'QUOTE_REQUIRED',
-          'Confira o resumo antes de confirmar a compra.',
-        )
-      }
+        if (
+          quoteSignature(acceptedQuote) !== quoteSignature(quote)
+        ) {
+          return HttpResponse.json(
+            {
+              code: 'QUOTE_CHANGED',
+              message:
+                'Os valores mudaram. Confira o novo resumo e confirme novamente.',
+              quote,
+            },
+            { status: 409 },
+          )
+        }
 
-      const acceptedQuote = body.acceptedQuote as CartQuote
+        const now = new Date().toISOString()
 
-      if (!Array.isArray(acceptedQuote.items)) {
-        return fail(400, 'QUOTE_REQUIRED', 'Resumo inválido.')
-      }
+        const order: Order = {
+          id: crypto.randomUUID(),
+          userId: session.user.id,
+          idempotencyKey,
+          status: 'pending',
+          createdAt: now,
+          updatedAt: now,
+          readyAt: Date.now() + 2_000,
+          version: 1,
+          transactionId:
+            `0x${crypto.randomUUID().replaceAll('-', '')}` +
+            crypto.randomUUID().replaceAll('-', ''),
+          quote: structuredClone(quote),
+          profile,
+          wallet,
+        }
 
-      if (quoteSignature(acceptedQuote) !== quoteSignature(quote)) {
-        return HttpResponse.json(
-          {
-            code: 'QUOTE_CHANGED',
-            message:
-              'Os valores mudaram. Confira o novo resumo e confirme novamente.',
-            quote,
-          },
-          { status: 409 },
-        )
-      }
+        orders.push({ order, fingerprint })
+        saveOrders(orders)
 
-      const now = new Date().toISOString()
-
-      const order: Order = {
-        id: crypto.randomUUID(),
-        userId: session.user.id,
-        idempotencyKey,
-        status: 'pending',
-        createdAt: now,
-        updatedAt: now,
-        readyAt: Date.now() + 2_000,
-        version: 1,
-        transactionId:
-          `0x${crypto.randomUUID().replaceAll('-', '')}` +
-          crypto.randomUUID().replaceAll('-', ''),
-        quote: structuredClone(quote),
-        profile,
-        wallet,
-      }
-
-      orders.push({ order, fingerprint })
-      saveOrders(orders)
-
-      return HttpResponse.json(order, { status: 201 })
+        return HttpResponse.json(order, { status: 201 })
+      })
     } catch (error) {
       if (error instanceof MockApiError) {
         return fail(error.status, error.code, error.message)
+      }
+
+      if (error instanceof SyntaxError) {
+        return fail(
+          400,
+          'INVALID_ORDER',
+          'O conteúdo do pedido é inválido.',
+        )
       }
 
       return fail(
@@ -322,17 +420,42 @@ export const orderHandlers = [
       return fail(401, 'SESSION_EXPIRED', 'Entre novamente.')
     }
 
-    const stored = readOrders().find(
-      (entry) =>
-        entry.order.userId === session.user.id &&
-        entry.order.idempotencyKey === params.key,
-    )
+    try {
+      const stored = readOrders().find(
+        (entry) =>
+          entry.order.userId === session.user.id &&
+          entry.order.idempotencyKey === params.key,
+      )
 
-    if (!stored) {
-      return fail(404, 'ORDER_NOT_FOUND', 'Pedido não encontrado.')
+      if (!stored) {
+        return fail(
+          404,
+          'ORDER_NOT_FOUND',
+          'Pedido não encontrado.',
+        )
+      }
+
+      const order = await finalizeOrder(
+        session.user.id,
+        stored.order.id,
+      )
+
+      if (!order) {
+        return fail(
+          404,
+          'ORDER_NOT_FOUND',
+          'Pedido não encontrado.',
+        )
+      }
+
+      return HttpResponse.json(order)
+    } catch {
+      return fail(
+        500,
+        'ORDER_PROCESSING_ERROR',
+        'Não foi possível consultar a tentativa. Tente novamente.',
+      )
     }
-
-    return HttpResponse.json(stored.order)
   }),
 
   http.get('/api/orders/:id', async ({ request, params }) => {
@@ -344,31 +467,27 @@ export const orderHandlers = [
       return fail(401, 'SESSION_EXPIRED', 'Entre novamente.')
     }
 
-    const orders = readOrders()
-    const stored = orders.find(
-      (entry) =>
-        entry.order.id === params.id &&
-        entry.order.userId === session.user.id,
-    )
+    try {
+      const order = await finalizeOrder(
+        session.user.id,
+        String(params.id),
+      )
 
-    if (!stored) {
-      return fail(404, 'ORDER_NOT_FOUND', 'Pedido não encontrado.')
-    }
-
-    if (
-      stored.order.status === 'pending' &&
-      stored.order.readyAt <= Date.now()
-    ) {
-      stored.order = {
-        ...stored.order,
-        status: 'confirmed',
-        updatedAt: new Date().toISOString(),
-        version: stored.order.version + 1,
+      if (!order) {
+        return fail(
+          404,
+          'ORDER_NOT_FOUND',
+          'Pedido não encontrado.',
+        )
       }
 
-      saveOrders(orders)
+      return HttpResponse.json(order)
+    } catch {
+      return fail(
+        500,
+        'ORDER_PROCESSING_ERROR',
+        'Não foi possível consultar o pedido. Tente novamente.',
+      )
     }
-
-    return HttpResponse.json(stored.order)
   }),
 ]
