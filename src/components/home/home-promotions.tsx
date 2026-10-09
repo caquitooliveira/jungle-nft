@@ -12,7 +12,7 @@ export function HomePromotions({ onExplore }: HomePromotionsProps) {
     >
       <article className="grid grid-cols-2 overflow-hidden rounded-lg bg-[#281a13]">
         <img
-          src="/images/ape-green.png"
+          src="/images/ape-green.webp"
           alt="Macaco de jaqueta verde e óculos"
           width={1254}
           height={1254}
@@ -38,7 +38,7 @@ export function HomePromotions({ onExplore }: HomePromotionsProps) {
 
       <article className="grid grid-cols-2 overflow-hidden rounded-lg bg-[#281a13]">
         <img
-          src="/images/ape-black.png"
+          src="/images/ape-black.webp"
           alt="Macaco de paletó claro"
           width={1254}
           height={1254}

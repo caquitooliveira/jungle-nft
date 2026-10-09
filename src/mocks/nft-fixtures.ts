@@ -3,25 +3,25 @@ import type { Nft } from '@/types/nft'
 const artworks = [
   {
     name: 'Emerald Ape',
-    imageUrl: '/images/ape-green.png',
+    imageUrl: '/images/ape-green.webp',
     creator: 'Jungle Studio',
     attributes: ['Óculos', 'Esmeralda', 'Raro'],
   },
   {
     name: 'Sage Nomad',
-    imageUrl: '/images/ape-purple.png',
+    imageUrl: '/images/ape-purple.webp',
     creator: 'Nomad Collective',
     attributes: ['Chapéu', 'Violeta', 'Raro'],
   },
   {
     name: 'Golden Beat',
-    imageUrl: '/images/ape-gold.png',
+    imageUrl: '/images/ape-gold.webp',
     creator: 'Golden Studio',
     attributes: ['Fones', 'Dourado', 'Musical'],
   },
   {
     name: 'Neon Vessel',
-    imageUrl: '/images/ape-black.png',
+    imageUrl: '/images/ape-black.webp',
     creator: 'Neon Collective',
     attributes: ['Traje', 'Marfim', 'Elegante'],
   },

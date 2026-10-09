@@ -2,26 +2,12 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   Outlet,
 } from '@tanstack/react-router'
 import { HomePage } from '@/pages/home-page'
-import { NftDetailPage } from '@/pages/nft-detail-page'
-import { CartPage } from '@/pages/cart-page'
-import { CheckoutPage } from '@/pages/checkout-page'
-import { OrderConfirmationPage } from '@/pages/order-confirmation-page'
-import { ProfilePage } from '@/pages/profile-page'
 import { NotFoundPage } from '@/pages/not-found-page'
 import { validateCatalogSearch } from '@/lib/catalog-search'
-import { WalletsPage } from '@/pages/wallets-page'
-import { FavoritesPage } from '@/pages/favorites-page'
-
-
-
-const walletsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/carteiras',
-  component: WalletsPage,
-})
 
 const rootRoute = createRootRoute({
   component: Outlet,
@@ -38,37 +24,64 @@ const indexRoute = createRoute({
 const nftDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/nfts/$nftId',
-  component: NftDetailPage,
+  component: lazyRouteComponent(
+    () => import('@/pages/nft-detail-page'),
+    'NftDetailPage',
+  ),
 })
 
 const cartRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/carrinho',
-  component: CartPage,
+  component: lazyRouteComponent(
+    () => import('@/pages/cart-page'),
+    'CartPage',
+  ),
 })
 
 const checkoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/pagamento',
-  component: CheckoutPage,
+  component: lazyRouteComponent(
+    () => import('@/pages/checkout-page'),
+    'CheckoutPage',
+  ),
 })
 
 const orderRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/pedidos/$orderId',
-  component: OrderConfirmationPage,
+  component: lazyRouteComponent(
+    () => import('@/pages/order-confirmation-page'),
+    'OrderConfirmationPage',
+  ),
 })
 
 const profileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/perfil',
-  component: ProfilePage,
+  component: lazyRouteComponent(
+    () => import('@/pages/profile-page'),
+    'ProfilePage',
+  ),
+})
+
+const walletsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/carteiras',
+  component: lazyRouteComponent(
+    () => import('@/pages/wallets-page'),
+    'WalletsPage',
+  ),
 })
 
 const favoritesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/favoritos',
-  component: FavoritesPage,
+  component: lazyRouteComponent(
+    () => import('@/pages/favorites-page'),
+    'FavoritesPage',
+  ),
 })
 
 const routeTree = rootRoute.addChildren([

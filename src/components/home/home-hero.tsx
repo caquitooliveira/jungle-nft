@@ -40,7 +40,7 @@ export function HomeHero() {
       </div>
 
       <img
-        src="/images/ape-green.png"
+        src="/images/ape-green.webp"
         alt="Macaco de jaqueta verde e óculos, destaque da coleção Kurio"
         width={1254}
         height={1254}

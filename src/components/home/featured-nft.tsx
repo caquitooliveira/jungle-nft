@@ -15,7 +15,7 @@ export function FeaturedNft() {
       </div>
 
       <img
-        src="/images/ape-purple.png"
+        src="/images/ape-purple.webp"
         alt="NFT de um macaco com roupas e acessórios roxos"
         width={1254}
         height={1254}
