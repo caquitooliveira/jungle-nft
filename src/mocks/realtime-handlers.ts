@@ -1,4 +1,5 @@
 import { ws } from 'msw'
+import { subscribeNftUpdates } from './nft-db'
 
 const socketUrl = new URL('/', window.location.origin)
 socketUrl.protocol =
@@ -8,25 +9,33 @@ const realtime = ws.link(socketUrl.href)
 
 export const realtimeHandlers = [
   realtime.addEventListener('connection', ({ client }) => {
-    console.info('[MSW] Socket.IO interceptado.')
-
     const sid = crypto.randomUUID()
     let connected = false
 
-    // Recebe os pacotes enviados pelo Socket.IO do navegador.
+    function emit(event: string, payload: unknown) {
+      client.send(`42${JSON.stringify([event, payload])}`)
+    }
+
+    const unsubscribe = subscribeNftUpdates((nft) => {
+      if (connected) {
+        emit('nft:updated', {
+          nftId: nft.id,
+          version: nft.version,
+        })
+      }
+    })
+
     client.addEventListener('message', (event) => {
       if (typeof event.data !== 'string') {
         return
       }
 
-      // O cliente pede para entrar no namespace padrão.
       if (event.data === '40') {
         connected = true
         client.send(`40${JSON.stringify({ sid })}`)
         return
       }
 
-      // "42" identifica um evento Socket.IO.
       if (!connected || !event.data.startsWith('42')) {
         return
       }
@@ -38,20 +47,13 @@ export const realtimeHandlers = [
           Array.isArray(payload) &&
           payload[0] === 'client:ready'
         ) {
-          client.send(
-            `42${JSON.stringify([
-              'server:ready',
-              { message: 'Conexão em tempo real funcionando.' },
-            ])}`,
-          )
+          emit('server:ready', { connected: true })
         }
       } catch {
         console.warn('[MSW] Pacote Socket.IO inválido.')
       }
     })
 
-    // Primeiro abre o Engine.IO. Só confirma o Socket.IO
-    // depois que o cliente responder com "40".
     queueMicrotask(() => {
       client.send(
         `0${JSON.stringify({
@@ -69,7 +71,9 @@ export const realtimeHandlers = [
     }, 20_000)
 
     client.addEventListener('close', () => {
+      connected = false
       window.clearInterval(heartbeat)
+      unsubscribe()
     })
   }),
 ]
