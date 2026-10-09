@@ -1,5 +1,10 @@
 # Kurio — Marketplace de NFTs
 
+## Links
+
+- Aplicação: https://jungle-nft.vercel.app/
+- Repositório: https://github.com/caquitooliveira/jungle-nft
+
 Aplicação desenvolvida para o desafio técnico de Frontend da Jungle Gaming.
 
 Permite explorar NFTs, filtrar o catálogo, gerenciar favoritos e carteiras, autenticar usuários e realizar compras simuladas.
